@@ -1,5 +1,15 @@
 <template>
   <div class="page">
+    <pw-section class="yellow" label="Authenticate">
+      <ul>
+        <li v-if="this.user">
+          <h2>Welcome {{ this.user.displayName ? this.user.displayName : "" }}!</h2>
+        </li>
+        <li>
+          <button v-on:click="signInWithGoogle">{{ this.user ? "Logout" : "Login" }}</button>
+        </li>
+      </ul>
+    </pw-section>
     <pw-section class="yellow" label="Import" ref="import">
       <ul>
         <li>
@@ -38,6 +48,78 @@
           </ul>
         </div>
       </import-modal>
+    </pw-section>
+    <pw-section class="yellow" label="Collections" v-if="this.user">
+      <ul>
+        <li>
+          <h3 class="title">Load Request</h3>
+        </li>
+      </ul>
+      <ul>
+        <li>
+          <label for="collections">Collection</label>
+          <select id="collections" v-model="collection">
+            <option :selected="true" value="">Select Collection</option>
+            <option v-for="id in collections" :selected="id" :value="id">
+            {{ id }}
+            </option>
+          </select>
+        </li>
+        <li v-if="this.collection">
+          <label for="collectionRequests">Request</label>
+          <select id="collectionRequests" v-model="collectionRequest">
+            <option :selected="true" value="">Select Request</option>
+            <option v-for="request in collectionRequests" :selected="request" :value="request">
+            {{ request.method + " - " + request.url + request.path }}
+            </option>
+          </select>
+        </li>
+        <li v-if="this.collectionRequest">
+          <label class="hide-on-small-screen" for="loadRequest">&nbsp;</label>
+          <button id="loadRequest" @click="loadRequest">Load</button>
+        </li>
+      </ul>
+      <ul v-if="editCollections !== false">
+        <li>
+          <h3 class="title">Create Collection</h3>
+        </li>
+      </ul>
+      <ul v-if="editCollections !== false">
+        <li>
+          <label for="newCollection">Collection</label>
+          <input :class="{ error: invalidID }" @keyup.enter="!invalidID ? createCollection() : null" id="newCollection" type="url" v-model="newCollection">
+        </li>
+        <li>
+          <label class="hide-on-small-screen" for="createCollection">&nbsp;</label>
+          <button id="createCollection" @click="createCollection" :disabled="invalidID">Create</button>
+        </li>
+      </ul>
+      <ul v-if="editCollections !== false">
+        <li>
+          <h3 class="title">Delete Collection</h3>
+        </li>
+      </ul>
+      <ul v-if="editCollections !== false">
+        <li>
+          <label for="allCollections">Collection</label>
+          <select id="allCollections" v-model="collection">
+            <option :selected="true" value="">Select Collection</option>
+            <option v-for="id in collections" :selected="id" :value="id">
+            {{ id }}
+            </option>
+          </select>
+        </li>
+        <li>
+          <label class="hide-on-small-screen" for="deleteCollection">&nbsp;</label>
+          <button id="deleteCollection" @click="deleteCollection">Delete</button>
+        </li>
+      </ul>
+      <ul>
+        <li>
+          <label class="hide-on-small-screen" for="editCollection">&nbsp;</label>
+          <button id="editCollection" @click="editCollections = !editCollections">{{ editCollections ? "Done" : "Edit Collections" }}</button>
+        </li>
+      </ul>
     </pw-section>
     <pw-section class="blue" label="Request" ref="request">
       <ul>
@@ -84,6 +166,41 @@
             </button>
           </li>
         </div>
+        <li v-if="this.user">
+          <label class="hide-on-small-screen" for="save-modal">&nbsp;</label>
+          <button id="save-modal" @click="showSaveModal = true">Save</button>
+          <import-modal v-if="showSaveModal" @close="showSaveModal = false">
+            <div slot="header">
+              <ul>
+                <li>
+                  <div class="flex-wrap">
+                    <h3 class="title">Save to Collection</h3>
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <div slot="body">
+              <ul>
+                <li>
+                  <label for="collectionSave">Collection</label>
+                  <select id="collectionSave" v-model="collection">
+                    <option :selected="true" value="">Select Collection</option>
+                    <option v-for="id in collections" :selected="id" :value="id">
+                    {{ id }}
+                    </option>
+                  </select>
+                </li>
+              </ul>
+            </div>
+            <div slot="footer">
+              <ul>
+                <li>
+                  <button @click="toggleSaveModal">Save</button>
+                </li>
+              </ul>
+            </div>
+          </import-modal>
+        </li>
         <li>
           <label class="hide-on-small-screen" for="action">&nbsp;</label>
           <button :disabled="!isValidURL" @click="sendRequest" class="show" id="action" name="action" ref="sendButton">
@@ -326,6 +443,24 @@
   import parseCurlCommand from '../assets/js/curlparser.js';
   import hljs from 'highlight.js';
   import 'highlight.js/styles/dracula.css';
+  import firebase from 'firebase/app';
+  import 'firebase/auth';
+  import 'firebase/firestore';
+
+  // Initialize Cloud Firestore through Firebase
+  firebase.initializeApp({
+    apiKey: "<replace this>",
+    authDomain: "<replace this>",
+    databaseURL: "<replace this>",
+    projectId: "<replace this>",
+    storageBucket: "<replace this>",
+    messagingSenderId: "922146966461",
+    appId: "<replace this>"
+  });
+
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const functions = firebase.functions();
 
   const statusCategories = [{
       name: 'informational',
@@ -377,7 +512,6 @@
     directives: {
       textareaAutoHeight
     },
-
     components: {
       'pw-section': section,
       'pw-toggle': toggle,
@@ -387,7 +521,15 @@
     },
     data() {
       return {
+        user: this.$store.state.postwoman.authUser,
+        collections: this.$store.state.postwoman.collections,
+        collection: '',
+        collectionRequests: [],
+        collectionRequest: '',
+        editCollections: false,
+        newCollection: '',
         showModal: false,
+        showSaveModal: false,
         copyButton: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path d="M22 6v16h-16v-16h16zm2-2h-20v20h20v-20zm-24 17v-21h21v2h-19v19h-2z" /></svg>',
         copiedButton: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path d="M22 2v20h-20v-20h20zm2-2h-24v24h24v-24zm-5.541 8.409l-1.422-1.409-7.021 7.183-3.08-2.937-1.395 1.435 4.5 4.319 8.418-8.591z"/></svg>',
         method: 'GET',
@@ -435,6 +577,36 @@
       }
     },
     watch: {
+      collection(val) {
+        if (val) {
+          var main = this;
+          var requests = [];
+          var doc = this.firestore().doc(this.user.uid);
+          doc.get()
+          .then(async function(docRef) {
+            console.log(docRef.data())
+            var data = docRef.data()[val];
+            await Object.keys(data).forEach(function(request) {
+              this.push(request);
+            }.bind(requests))
+            console.log(requests)
+            main.collectionRequests = requests;
+          })
+          .catch(function(error) {
+              console.error("Error adding document: ", error);
+          });
+          
+          //this.firestore().doc(this.user.uid).collection(val).get().then(function(querySnapshot) {
+            //querySnapshot.forEach(function(doc) {
+                // doc.data() is never undefined for query doc snapshots
+                //console.log(atob(doc.id), " => ", doc.data());
+                //this.push(doc.data());
+            //}.bind(requests));
+            //main.collectionRequests = requests;
+            //console.log(main.collectionRequests);
+          //});
+        }
+      },
       contentType(val) {
         this.rawInput = !this.knownContentTypes.includes(val);
       },
@@ -452,6 +624,34 @@
           } else if (responseText && this.response.body != "(waiting to send request)" && this.response.body != "Loading..." && this.response.body != "See JavaScript console (F12) for details.") {
             responseText.innerText = this.responseType == 'application/json' ? JSON.stringify(this.response.body, null, 2) : this.response.body;
             hljs.highlightBlock(document.querySelector("div#response-details-wrapper pre code"));
+            //this.firestore().doc(this.user.uid).collection('collections').get().then(function(querySnapshot) {
+                //querySnapshot.forEach(function(doc) {
+                    // doc.data() is never undefined for query doc snapshots
+                    //console.log(atob(doc.id), " => ", doc.data());
+                //});
+            //});
+            //console.log(this.$store.state.postwoman.settings)
+            //console.log(this.currentUser())
+            //console.log(this.requestObj())
+            //console.log(JSON.stringify(this.requestObj()))
+            //console.log('Encoded: ' + btoa(JSON.stringify(this.requestObj())))
+            //this.firestore().doc(this.user.uid).update({ids: firebase.firestore.FieldValue.arrayUnion("greater_virginia")})
+            //this.firestore().doc(this.user.uid).get()
+            //.then(function(docRef) {
+              //docRef.data().ids.forEach(function(id) {
+                //console.log(id + ' ');
+              //})
+            //})
+            //.catch(function(error) {
+                //console.error("Error adding document: ", error);
+            //});
+            //this.firestore().doc(this.user.uid).collection('testCollection').doc(btoa(this.method + '-' + this.url)).set(this.requestObj())
+            //.then(function(docRef) {
+                //console.log("Document written with ID: ", docRef.id);
+            //})
+            //.catch(function(error) {
+                //console.error("Error adding document: ", error);
+            //});
           } else {
             responseText.innerText = this.response.body
           }
@@ -459,6 +659,10 @@
       }
     },
     computed: {
+      invalidID() {
+        const invalidID = new RegExp("\\.|\\/");
+        return invalidID.test(this.newCollection);
+      },
       statusCategory() {
         return findStatusGroup(this.response.status);
       },
@@ -605,6 +809,116 @@
       }
     },
     methods: {
+      deleteCollection: async function () {
+        var path = 'users/' + this.user.uid + '/' + this.collection;
+        var deleteFn = firebase.functions().httpsCallable('recursiveDelete');
+        deleteFn({ path: path }).then(function(result) {
+            logMessage('Delete success: ' + JSON.stringify(result));
+        }).catch(function(err) {
+            logMessage('Delete failed, see console,');
+            console.warn(err);
+        });
+      },
+      createCollection: async function () {
+        var ids = [];
+        var main = this;
+        var doc = this.firestore().doc(this.user.uid);
+        //await doc.update({ids: firebase.firestore.FieldValue.arrayUnion(this.newCollection)})
+        await doc.update({
+          [this.newCollection]: [{
+            "requests": []
+          }]
+        })
+        doc.get()
+        .then(async function(docRef) {
+          await Object.keys(docRef.data()).forEach(function(id) {
+            this.push(id);
+          }.bind(ids))
+          console.log(ids)
+          main.$store.commit('postwoman/createCollections', ids);
+        })
+        .catch(function(error) {
+            console.error("Error adding document: ", error);
+        });
+        console.log('createCollection was hit. Name is ' + this.newCollection)
+      },
+      loadRequest() {
+        var load = this.collectionRequest;
+        this.method = load.method;
+        this.url = load.url;
+        this.auth = load.auth;
+        this.path = load.path;
+        this.httpUser = load.httpUser;
+        this.httpPassword = load.httpPassword;
+        this.bearerToken = load.bearerToken;
+        this.headers = load.headers;
+        this.params = load.params;
+        this.bodyParams = load.bodyParams;
+        this.rawParams = load.rawParams;
+      },
+      createCollections(authState) {
+        if (authState === null) {
+          this.$store.commit('postwoman/createCollections', null);
+        } else {
+          var doc = this.firestore().doc(authState.uid);
+          var ids = [];
+          var main = this;
+          doc.get()
+          .then(async function(docRef) {
+            await Object.keys(docRef.data()).forEach(function(id) {
+              this.push(id);
+              console.log(id);
+              //this.$store.commit('postwoman/createCollections', id);
+            }.bind(ids))
+            console.log(ids)
+            main.$store.commit('postwoman/createCollections', ids);
+          })
+          .catch(function(error) {
+              console.error("Error adding document: ", error);
+          });
+          //console.log(ids)
+          //this.$store.commit('postwoman/createCollections', ids);
+        }
+      },
+      currentUserState(authState) {
+        this.$store.commit('postwoman/currentUserState', authState);
+      },
+      signInWithGoogle: async function () {
+        if (!this.user) {
+          var provider = new firebase.auth.GoogleAuthProvider();
+          await firebase.auth().signInWithPopup(provider);
+          await this.currentUserState(auth.currentUser);
+          this.createCollections(auth.currentUser)
+        } else {
+          firebase.auth().signOut().then(function() {
+            // Sign-out successful.
+            console.log("Signed out!");
+          }).catch(function(error) {
+            // An error happened.
+            console.log("Error signing out: " + error);
+          });
+          this.currentUserState(null);
+          this.createCollections(null);
+        }
+      },
+      requestObj() {
+        return {
+          method: this.method,
+          url: this.url,
+          auth: this.auth,
+          path: this.path,
+          httpUser: this.httpUser,
+          httpPassword: this.httpPassword,
+          bearerToken: this.bearerToken,
+          headers: this.headers,
+          params: this.params,
+          bodyParams: this.bodyParams,
+          rawParams: this.rawParams
+        }
+      },
+      firestore() {
+        return db.collection('users')
+      },
       handleUseHistory({
         method,
         url,
@@ -900,6 +1214,30 @@
       },
       toggleModal() {
         this.showModal = !this.showModal;
+      },
+      toggleSaveModal: async function () {
+        var docId = btoa(this.method + '-' + this.url + this.path)
+        var doc = this.firestore().doc(this.user.uid);
+        //await doc.update({["" + this.collection + ".requests"]: firebase.firestore.FieldValue.arrayUnion(docId)}).then(function(docRef) {
+            //console.log("Document updated with ID: ", docRef.id);
+        //}).catch(function(error) {
+            //console.error("Error updating document: ", error);
+        //});
+        await doc.update({
+          ["" + this.collection + "." + docId + ""]: this.requestObj()
+        }).then(function(docRef) {
+            console.log("Document updated with ID: ", docRef.id);
+        }).catch(function(error) {
+            console.error("Error updating document: ", error);
+        });
+        //await doc.collection(this.collection).doc(docId).set(this.requestObj())
+        //.then(function(docRef) {
+            //console.log("Document written with ID: ", docRef.id);
+        //})
+        //.catch(function(error) {
+            //console.error("Error adding document: ", error);
+        //});
+        this.showSaveModal = !this.showSaveModal;
       }
     },
     mounted() {

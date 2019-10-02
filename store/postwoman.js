@@ -42,7 +42,9 @@ export const SETTINGS_KEYS = [
 ];
 
 export const state = () => ({
-    settings: {}
+    settings: {},
+    authUser: null,
+    collections: []
 });
 
 export const mutations = {
@@ -60,6 +62,18 @@ export const mutations = {
         if(!SETTINGS_KEYS.includes(key)) throw new Error("The settings structure does not include the key " + key);
 
         state.settings[key] = value;
-    }
+    },
+
+    currentUserState (state, authState) {
+        state.authUser = JSON.parse(JSON.stringify(authState));
+    },
+
+    createCollections(state, authState) {
+        if (state.authUser === null || authState === null) {
+            state.collections = [];
+        } else {
+            state.collections = authState;
+        }
+      }
 
 };
